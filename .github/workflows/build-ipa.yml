@@ -1,0 +1,68 @@
+name: Build iOS IPA (unsigned)
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Generate app icon
+        run: python3 tools/make_icon.py
+
+      - name: Build app (no code signing)
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project SirenSimulator.xcodeproj \
+            -scheme SirenSimulator \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_ENTITLEMENTS="" \
+            build
+
+      - name: Package into .ipa
+        run: |
+          APP="build/Build/Products/Release-iphoneos/SirenSimulator.app"
+          echo "--- built app ---"
+          ls -la "$APP"
+          rm -rf Payload
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+          zip -qry SirenSimulator-unsigned.ipa Payload
+          echo "--- ipa ---"
+          ls -la SirenSimulator-unsigned.ipa
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SirenSimulator-unsigned-ipa
+          path: SirenSimulator-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 30
